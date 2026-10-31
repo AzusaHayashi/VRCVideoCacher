@@ -123,7 +123,7 @@ public sealed class HookInstallationTests : BridgeTestBase
         Directory.CreateDirectory(Path.GetDirectoryName(source)!);
         File.WriteAllText(source, "%fake shell of the hook dll%");
 
-        Assert.True(HookInstallation.Install(source, out var message), message);
+        Assert.True(HookInstallation.Install(source, out var message, registerStartupHook: true), message);
 
         Assert.True(File.Exists(HookDll));
         Assert.True(File.Exists(BridgePaths.InstallManifest));
@@ -155,6 +155,28 @@ public sealed class HookInstallationTests : BridgeTestBase
     }
 
     [Fact]
+    public void Install_ByDefaultDoesNotTouchStartupHooks()
+    {
+        AssertIsolated();
+
+        var store = (MemoryEnvironmentStore)HookInstallation.Store;
+        store.Set(BridgePaths.StartupHooksVariable, ForeignHook);
+
+        var source = Path.Combine(Root, "source", HookInstallation.HookAssemblyName);
+        Directory.CreateDirectory(Path.GetDirectoryName(source)!);
+        File.WriteAllText(source, "%fake shell of the hook dll%");
+
+        // The Steam build disables the startup-hook feature switch, so registration is opt-in on purpose.
+        Assert.True(HookInstallation.Install(source, out var message), message);
+
+        Assert.Equal(ForeignHook, store.Get(BridgePaths.StartupHooksVariable));
+        Assert.True(File.Exists(HookDll));
+        Assert.True(HookInstallation.Inspect().DllPresent);
+        Assert.False(HookInstallation.Inspect().EnvRegistered);
+        Assert.Empty(HookInstallation.ReadManifest()!.EnvEntriesAdded);
+    }
+
+    [Fact]
     public void Install_RejectsMissingSource()
     {
         Assert.False(HookInstallation.Install(Path.Combine(Root, "missing.dll"), out var message));
@@ -172,7 +194,7 @@ public sealed class HookInstallationTests : BridgeTestBase
         var source = Path.Combine(Root, "source", HookInstallation.HookAssemblyName);
         Directory.CreateDirectory(Path.GetDirectoryName(source)!);
         File.WriteAllText(source, "%fake shell of the hook dll%");
-        Assert.True(HookInstallation.Install(source, out var message), message);
+        Assert.True(HookInstallation.Install(source, out var message, registerStartupHook: true), message);
 
         Assert.True(HookInstallation.Uninstall(out var uninstallMessage), uninstallMessage);
 

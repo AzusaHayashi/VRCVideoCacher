@@ -128,13 +128,21 @@ public static class SecretRedactor
 
         foreach (var name in KnownSecretNames)
         {
-            var idx = text.IndexOf(name + "\t", StringComparison.Ordinal);
-            while (idx >= 0)
+            // The replacement text still contains "name<TAB>", so the search must resume *after* what
+            // was just written — searching from 0 again re-matched the same spot and looped forever.
+            // (Regression test: SecretRedactorTests.Redact_RemovesValueOfKnownCookieNames_EvenWithoutSevenFields)
+            var searchFrom = 0;
+            while (true)
             {
+                var idx = text.IndexOf(name + "\t", searchFrom, StringComparison.Ordinal);
+                if (idx < 0) break;
+
                 var end = text.IndexOf('\n', idx);
                 if (end < 0) end = text.Length;
-                text = text[..idx] + name + "\t<redacted>" + text[end..];
-                idx = text.IndexOf(name + "\t", StringComparison.Ordinal);
+
+                var replacement = name + "\t<redacted>";
+                text = string.Concat(text.AsSpan(0, idx), replacement, text.AsSpan(end));
+                searchFrom = idx + replacement.Length;
             }
         }
         return text;

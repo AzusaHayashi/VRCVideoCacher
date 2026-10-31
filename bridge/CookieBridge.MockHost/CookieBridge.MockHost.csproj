@@ -11,14 +11,18 @@
     <Version>2099.1.1</Version>
     <AssemblyTitle>VRCVideoCacher (CookieBridge mock host)</AssemblyTitle>
 
-    <!-- Deliberately the same publish shape as the real VRCVideoCacher Release/SteamRelease build,
-         so "single-file self-contained + DOTNET_STARTUP_HOOKS + reflection" is proved end to end. -->
-    <PublishSingleFile>true</PublishSingleFile>
-    <SelfContained>true</SelfContained>
-    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
-    <PublishTrimmed>true</PublishTrimmed>
+    <!-- Two publish flavours, selected with -p:MockHostFlavor=fd|single.
+         fd     : framework-dependent, NOT single-file  -> the CoreCLR startup-hook feature switch is ON,
+                  so this is the variant that proves the DOTNET_STARTUP_HOOKS + reflection chain works.
+         single : single-file + self-contained + trimmed -> the exact publishing shape of the shipped
+                  VRCVideoCacher; its host disables System.StartupHookProvider, so it is the negative
+                  control that documents the mechanism boundary. -->
+    <PublishSingleFile Condition="'$(MockHostFlavor)' == 'single'">true</PublishSingleFile>
+    <SelfContained Condition="'$(MockHostFlavor)' == 'single'">true</SelfContained>
+    <RuntimeIdentifier Condition="'$(MockHostFlavor)' == 'single'">win-x64</RuntimeIdentifier>
+    <IncludeNativeLibrariesForSelfExtract Condition="'$(MockHostFlavor)' == 'single'">true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile Condition="'$(MockHostFlavor)' == 'single'">true</EnableCompressionInSingleFile>
+    <PublishTrimmed Condition="'$(MockHostFlavor)' == 'single'">true</PublishTrimmed>
     <TrimMode>partial</TrimMode>
     <SuppressTrimAnalysisWarnings>true</SuppressTrimAnalysisWarnings>
     <InvariantGlobalization>true</InvariantGlobalization>

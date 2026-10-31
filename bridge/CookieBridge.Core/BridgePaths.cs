@@ -33,9 +33,9 @@ public static class BridgePaths
     /// <summary>Test override for VRCVideoCacher's data directory (<c>VRCCB_VRCVC_DATA</c>).</summary>
     public const string VrcvcDataOverrideVariable = "VRCCB_VRCVC_DATA";
 
-    private static string? _root;
-
-    public static string Root => _root ??= ResolveRoot();
+    // Deliberately not cached: VRCCB_ROOT is documented as a per-process override and the automated
+    // test suite flips it between cases. Caching it made the isolation of one test leak into the next.
+    public static string Root => ResolveRoot();
 
     private static string ResolveRoot()
     {
@@ -57,20 +57,17 @@ public static class BridgePaths
     public static string InstallManifest => Path.Combine(Root, "install.json");
     public static string HookDir => Path.Combine(Root, "hook");
 
-    private static string? _vrcvcDataDir;
-
     /// <summary><c>%APPDATA%\VRCVideoCacher</c> — mirrors upstream <c>Program.DataPath</c>.</summary>
     public static string VrcvcDataDir
     {
         get
         {
-            if (_vrcvcDataDir != null) return _vrcvcDataDir;
             var custom = Environment.GetEnvironmentVariable(VrcvcDataOverrideVariable);
             if (!string.IsNullOrWhiteSpace(custom))
             {
-                try { return _vrcvcDataDir = Path.GetFullPath(custom); } catch { /* fall through */ }
+                try { return Path.GetFullPath(custom); } catch { /* fall through */ }
             }
-            return _vrcvcDataDir = Path.Combine(
+            return Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "VRCVideoCacher");
         }
     }
