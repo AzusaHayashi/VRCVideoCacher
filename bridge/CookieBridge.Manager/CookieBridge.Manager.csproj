@@ -1,0 +1,64 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>false</UseWindowsForms>
+    <AssemblyName>CookieBridge.Manager</AssemblyName>
+    <RootNamespace>CookieBridge.Manager</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- 目标平台维度用默认的 net10.0-windows（windows7.0）；不额外指定 SupportedOSPlatformVersion，
+         否则会触发 NETSDK1135（平台版本高于 TargetPlatformVersion）。 -->
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+
+    <!--
+      零 NuGet 依赖：管理器只依赖 BCL + WPF + CookieBridge.Core 项目引用。
+      默认 framework-dependent（要求目标机器装好 .NET 10 Desktop Runtime），体积小、启动快。
+    -->
+    <SelfContained>false</SelfContained>
+
+    <!--
+      必须覆盖 Directory.Build.props 里的 InvariantGlobalization=true：
+      WPF 的字体缓存（MS.Internal.FontCache.MajorLanguages）会构造 CultureInfo("en")，
+      在 globalization-invariant 模式下直接抛 CultureNotFoundException，窗口在首帧布局时崩溃。
+      桌面应用本来就需要完整的 NLS 全球化支持，这里显式关闭 invariant 模式。
+    -->
+    <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+
+  <!--
+    Release 单文件自包含发布（按需启用，默认关闭，不改文件即可打开发布开关）：
+
+      cd bridge
+      dotnet publish CookieBridge.Manager/CookieBridge.Manager.csproj -c Release -p:PublishSelfContained=true -r win-x64 -o publish/manager
+
+    这个开关会启用下方条件块，等价于：
+      SelfContained=true, RuntimeIdentifier=win-x64, PublishSingleFile=true,
+      IncludeNativeLibrariesForSelfExtract=true, EnableCompressionInSingleFile=true
+
+    重要：WPF 不支持 PublishTrimmed，任何情况下都不要打开裁剪（下方显式关闭）。
+  -->
+  <PropertyGroup Condition="'$(PublishSelfContained)' == 'true'">
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-x64</RuntimeIdentifier>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <PublishTrimmed>false</PublishTrimmed>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CookieBridge.Core\CookieBridge.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 关于页展示用的说明文件（存在才复制）。 -->
+    <None Include="..\..\README.md" Link="docs\README.md" CopyToOutputDirectory="PreserveNewest"
+          Condition="Exists('..\..\README.md')" />
+    <None Include="..\..\docs\CONTRACT.md" Link="docs\CONTRACT.md" CopyToOutputDirectory="PreserveNewest"
+          Condition="Exists('..\..\docs\CONTRACT.md')" />
+  </ItemGroup>
+
+</Project>

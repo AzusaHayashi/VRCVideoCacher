@@ -1,0 +1,46 @@
+{
+  "manifest_version": 3,
+  "name": "VRCVideoCacher CookieBridge",
+  "description": "Exports YouTube login cookies to the local VRCVideoCacher CookieBridge native host (no local HTTP server required).",
+  "version": "1.0.0",
+  "permissions": [
+    "cookies",
+    "nativeMessaging",
+    "storage"
+  ],
+  "host_permissions": [
+    "*://*.youtube.com/*"
+  ],
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAiPOoGN7Vq0v2B+0Ay77+VVoxdlognY0aLcgLvUWFDeJbQrB48RqNC1veFJRNPKXncVt2Jnx5sk8K6FyMa2N1dx561JRoMKuJ1oQQFr1MaIYIjv0XI7SXde1kgiRA9gEgrI16I+YIUG13h6z4vS4vHk8DX8NDEI3teJKVie3psFzEiWuL0MCJoFm6Cuvd1P5qjUihQ4TEPcB2oAweACxN96zEL3kUhdmDf5CSaJXgMvsL5dcxqfrB+G9STs4ksneiJpQ2HKO5jqDTdjsE+KrhayapfeppFXuk5AIizna09TZVmZuuHArB8aDbLR66oqOaE8FTeVdcJRcsJ9SyfeGirwIDAQAB",
+  "minimum_chrome_version": "109",
+  "background": {
+    "service_worker": "background.mjs",
+    "scripts": [
+      "background.mjs"
+    ],
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.youtube.com/*"
+      ],
+      "js": [
+        "content.js"
+      ]
+    }
+  ],
+  "action": {
+    "default_title": "CookieBridge: 查看同步状态"
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "vrexcookiebridge@local",
+      "strict_min_version": "138.0"
+    }
+  }
+}

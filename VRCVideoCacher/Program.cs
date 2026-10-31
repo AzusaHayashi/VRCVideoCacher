@@ -36,6 +36,10 @@ internal sealed class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        // CookieBridge (fork addition): load the optional per-user cookie plugin first.
+        // No-op when the plugin is not installed, disabled, or fails — see Utils/CookieBridgePlugin.cs.
+        CookieBridgePlugin.TryLoad();
+
         LaunchArgs.SetupArguments(args);
         // Must run before Steam API init — this process may be a privileged subprocess invoked by ElevatorManager
         HostsManager.TryRun();

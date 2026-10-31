@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>VRCVideoCacher CookieBridge</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #ffffff;
+        --fg: #1c1c1e;
+        --muted: #6b7280;
+        --card: #f7f7f8;
+        --border: #e3e3e6;
+        --accent: #1f6feb;
+        --ok: #1f9d55;
+        --warn: #b7791f;
+        --err: #d93025;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #16181c;
+          --fg: #e7e7ea;
+          --muted: #9aa0aa;
+          --card: #1e2126;
+          --border: #2b2f36;
+          --accent: #5b9dff;
+          --ok: #4ade80;
+          --warn: #f0b429;
+          --err: #ff6b61;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 24px;
+        background: var(--bg);
+        color: var(--fg);
+        font: 14px/1.55 "Segoe UI", system-ui, -apple-system, "Microsoft YaHei", sans-serif;
+      }
+      main {
+        max-width: 640px;
+        margin: 0 auto;
+      }
+      h1 {
+        margin: 0 0 4px;
+        font-size: 18px;
+        font-weight: 600;
+      }
+      .sub {
+        margin: 0 0 20px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 14px 16px;
+        margin-bottom: 16px;
+      }
+      dl {
+        display: grid;
+        grid-template-columns: 190px 1fr;
+        gap: 8px 12px;
+        margin: 0;
+      }
+      dt {
+        color: var(--muted);
+      }
+      dd {
+        margin: 0;
+        word-break: break-word;
+      }
+      .state {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-weight: 600;
+      }
+      .dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: var(--muted);
+        flex: 0 0 auto;
+      }
+      .dot.ok {
+        background: var(--ok);
+      }
+      .dot.warn {
+        background: var(--warn);
+      }
+      .dot.err {
+        background: var(--err);
+      }
+      code,
+      .mono {
+        font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+        font-size: 12px;
+      }
+      .error-box {
+        margin-top: 10px;
+        padding: 10px 12px;
+        border: 1px solid var(--border);
+        border-left: 3px solid var(--err);
+        border-radius: 6px;
+        background: transparent;
+        display: none;
+      }
+      .error-box.visible {
+        display: block;
+      }
+      .error-box .code {
+        color: var(--err);
+        font-weight: 600;
+      }
+      .error-box .detail {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 12px;
+        word-break: break-word;
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 12px;
+      }
+      button {
+        font: inherit;
+        padding: 8px 16px;
+        border-radius: 8px;
+        border: 1px solid transparent;
+        background: var(--accent);
+        color: #fff;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.55;
+        cursor: default;
+      }
+      a {
+        color: var(--accent);
+        text-decoration: none;
+      }
+      a:hover {
+        text-decoration: underline;
+      }
+      #hint {
+        color: var(--muted);
+        font-size: 12px;
+        min-height: 18px;
+      }
+      details {
+        margin-top: 4px;
+      }
+      details summary {
+        cursor: pointer;
+        color: var(--muted);
+      }
+      details ol {
+        margin: 8px 0 0;
+        padding-left: 20px;
+      }
+      details li {
+        margin-bottom: 4px;
+      }
+      #docs-panel pre {
+        margin: 0;
+        max-height: 420px;
+        overflow: auto;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>VRCVideoCacher CookieBridge</h1>
+      <p class="sub">
+        YouTube 登录 Cookie → Native Messaging → VRCVideoCacher Cookie 文件（无需本地 HTTP 服务）
+      </p>
+
+      <section class="card">
+        <dl>
+          <dt>上次同步时间</dt>
+          <dd id="last-sync">尚未同步</dd>
+
+          <dt>Cookie 条数</dt>
+          <dd id="cookie-count">—</dd>
+
+          <dt>已写入 VRCVideoCacher Cookie 文件</dt>
+          <dd><span class="state"><span id="written-dot" class="dot"></span><span id="written-text">未知</span></span></dd>
+
+          <dt>错误信息</dt>
+          <dd id="error-summary">无</dd>
+        </dl>
+        <div id="error-box" class="error-box">
+          <div class="code" id="error-code"></div>
+          <div class="detail" id="error-detail"></div>
+        </div>
+      </section>
+
+      <section class="card">
+        <dl>
+          <dt>Native host</dt>
+          <dd class="mono" id="native-host">com.vrcvideocacher.cookiebridge</dd>
+
+          <dt>扩展 ID</dt>
+          <dd class="mono" id="extension-id">—</dd>
+
+          <dt>扩展版本</dt>
+          <dd class="mono" id="extension-version">—</dd>
+        </dl>
+      </section>
+
+      <div class="actions">
+        <button id="sync-now" type="button">立即同步</button>
+        <a id="docs-link" href="#" target="_blank" rel="noopener">打开安装说明</a>
+      </div>
+      <p id="hint"></p>
+
+      <details>
+        <summary>安装速览</summary>
+        <ol>
+          <li>Chrome：<code>chrome://extensions</code> → 打开“开发者模式” → “加载已解压的扩展程序” → 选择 <code>browser-extension/</code> 目录。</li>
+          <li>Firefox 138+：<code>about:debugging#/runtime/this-firefox</code> → “临时载入附加组件” → 选择本目录下的 <code>manifest.json</code>。</li>
+          <li>运行管理器安装 Native Host，并确认 <code>allowed_origins</code> 含本页显示的扩展 ID（<code>chrome-extension://&lt;id&gt;/</code>）。</li>
+          <li>登录 YouTube，点击“立即同步”；徽章变绿即表示 Cookie 已写入 <code>%APPDATA%\VRCVideoCacher\youtube_cookies.txt</code>。</li>
+        </ol>
+      </details>
+
+      <section class="card" id="docs-panel" hidden>
+        <pre id="docs-content"></pre>
+      </section>
+    </main>
+    <script src="options.js"></script>
+  </body>
+</html>

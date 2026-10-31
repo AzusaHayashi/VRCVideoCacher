@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <AssemblyName>CookieBridge.Tests</AssemblyName>
+    <RootNamespace>CookieBridge.Tests</RootNamespace>
+    <!-- xunit + DPAPI/registry interop; platform-specific warnings are noise here. -->
+    <NoWarn>$(NoWarn);CA1416;CS1591</NoWarn>
+    <!-- The x86 testhost cannot open the x64 vstest parent handle in this environment; pin x64. -->
+    <PlatformTarget>x64</PlatformTarget>
+    <Platforms>AnyCPU;x64</Platforms>
+  </PropertyGroup>
+
+  <!--
+    IMPORTANT: reference CookieBridge.Hook ONLY.
+    CookieBridge.Hook.csproj compiles every CookieBridge.Core source file into itself (single DLL, no
+    sibling assemblies inside VRCVideoCacher), so referencing CookieBridge.Core *as well* would inject the
+    same types twice and every test would fail with CS0433 duplicate-type errors.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\CookieBridge.Hook\CookieBridge.Hook.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.11.0" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <AssemblyName>CookieBridge.Core</AssemblyName>
+    <RootNamespace>CookieBridge.Core</RootNamespace>
+    <!-- Windows-only interop (DPAPI / ACL / registry). net10.0-windows implies TargetPlatformVersion
+         7.0, so declaring a higher SupportedOSPlatformVersion fails with NETSDK1135. Platform guards are
+         unnecessary here: the product only ever runs on Windows. -->
+  </PropertyGroup>
+
+</Project>

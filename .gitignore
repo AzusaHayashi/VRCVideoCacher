@@ -13,3 +13,22 @@ publish/
 # Runtime files
 *.log
 nul
+
+# ---- CookieBridge (fork addition) ----
+# Never commit cookie material, vaults, logs or local build output.
+dist/
+bridge/**/bin/
+bridge/**/obj/
+bridge/CookieBridge.Tests/TestResults/
+*.user
+vault.json
+vault.json.bak
+youtube_cookies.txt
+youtube_cookies.txt.*.bak
+disabled.flag
+hook-status.json
+pending.sync
+backups/
+*.cookiebridge.bak
+bridge/CookieBridge.MockHost/bin/
+bridge/CookieBridge.MockHost/obj/

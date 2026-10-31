@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <AssemblyName>CookieBridge.Hook</AssemblyName>
+    <RootNamespace>CookieBridge.Hook</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Version>1.0.0</Version>
+    <!--
+      The hook is loaded by VRCVideoCacher's own CoreCLR through DOTNET_STARTUP_HOOKS. It must be a
+      single self-contained IL assembly: no package references, no sibling DLLs, nothing that needs
+      assembly resolution inside the host app (which is a trimmed single-file publish we must not touch).
+      Core sources are therefore compiled in, not referenced.
+    -->
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <DebugType>portable</DebugType>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="*.cs" />
+    <!-- Exclude generated obj/bin artefacts: a plain ** glob would otherwise pull Core's AssemblyInfo.cs
+         into this assembly and produce CS0579 duplicate-attribute errors whenever Core was built first. -->
+    <Compile Include="..\CookieBridge.Core\**\*.cs"
+             Exclude="..\CookieBridge.Core\obj\**;..\CookieBridge.Core\bin\**"
+             LinkBase="Core" />
+  </ItemGroup>
+
+</Project>

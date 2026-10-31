@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <!-- Same assembly name as the real app: the hook identifies its host by assembly name. -->
+    <AssemblyName>VRCVideoCacher</AssemblyName>
+    <RootNamespace>VRCVideoCacher</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Version>2099.1.1</Version>
+    <AssemblyTitle>VRCVideoCacher (CookieBridge mock host)</AssemblyTitle>
+
+    <!-- Deliberately the same publish shape as the real VRCVideoCacher Release/SteamRelease build,
+         so "single-file self-contained + DOTNET_STARTUP_HOOKS + reflection" is proved end to end. -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>partial</TrimMode>
+    <SuppressTrimAnalysisWarnings>true</SuppressTrimAnalysisWarnings>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <DebugType>portable</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Reflective entry points must survive trimming regardless of how Main happens to use them. -->
+    <TrimmerRootAssembly Include="$(AssemblyName)" />
+  </ItemGroup>
+
+</Project>
