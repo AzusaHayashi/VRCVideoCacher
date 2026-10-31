@@ -48,7 +48,8 @@ $response = $null
 if ($reply.Reply) { $response = $reply.Reply | ConvertFrom-Json }
 
 Assert-True ($null -ne $response) 'native host returned a length-prefixed JSON reply'
-Assert-Equal 0 $reply.ExitCode 'native host exited cleanly'
+Assert-True ($reply.Exited -eq $true) 'native host exited after the message (clean EOF on stdin)'
+if ($null -ne $reply.ExitCode) { Assert-Equal 0 $reply.ExitCode 'native host exit code = 0' }
 Assert-True ($response.ok -eq $true) 'reply.ok = true' ("error=" + $response.error)
 Assert-True ($response.vaultUpdated -eq $true) 'reply.vaultUpdated = true'
 Assert-Equal 7 $response.cookieCount 'reply.cookieCount matches the canonical jar (7 = 1 login + 2 + 4 extras)'

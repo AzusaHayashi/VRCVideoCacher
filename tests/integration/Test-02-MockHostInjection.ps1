@@ -54,14 +54,15 @@ $proc = Start-BridgeProcess -FilePath $hostExe -Arguments @('--duration=25') -En
     VRCCB_VRCVC_DATA        = (Join-Path $root 'vrcvc-data')
     VRCCB_MOCK_COOKIE_PATH  = $targetFile
 }
-$collector = Start-ProcessCollector -Process $proc
 Write-Host "mock host pid: $($proc.Id)"
 
 try {
     # 3. The plugin must publish a fresh heartbeat.
+    # The very first heartbeat is written before the reflection probe completes, so wait for the
+    # capability map as well - otherwise the assertions race the hook.
     $status = Wait-Until -TimeoutSeconds 30 -Condition {
         $s = Read-HookStatus -Root $root
-        if ($s -and (Test-HookStatusFresh -Status $s)) { return $s }
+        if ($s -and (Test-HookStatusFresh -Status $s) -and $s.layers -and ($s.layers.PSObject.Properties.Name -contains 'L5.version')) { return $s }
         return $null
     }
 
@@ -90,8 +91,14 @@ try {
         Assert-Equal 0 (@($rows | Where-Object { ($_ -split "`t").Count -ne 7 }).Count) 'written rows have 7 fields'
         Assert-True ($written -match 'LOGIN_INFO') 'written cookie file contains LOGIN_INFO'
 
-        # 5. What the host itself reports must agree with the vault.
-        $hostOutput = $collector.StdOut.ToString()
+        # 5. What the host itself reports must agree with the vault. The host polls every 500 ms, so the
+        #    first line showing the injected jar can lag the hook's write by half a second.
+        $hostOutput = Wait-Until -TimeoutSeconds 15 -Condition {
+            $text = Get-ProcessStdOut -Process $proc
+            if ($text -match 'MOCKHOST poll[^\r\n]*count=6') { return $text }
+            return $null
+        }
+        if (-not $hostOutput) { $hostOutput = Get-ProcessStdOut -Process $proc }
         $polls = [regex]::Matches($hostOutput, 'MOCKHOST poll[^\r\n]*count=(\d+)')
         Assert-True ($polls.Count -gt 0) 'mock host polled its cookie file'
         if ($polls.Count -gt 0) {

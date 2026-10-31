@@ -32,6 +32,8 @@ function Initialize-Dotnet {
     $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
     $env:DOTNET_NOLOGO = '1'
     $env:DOTNET_SKIP_FIRST_TIME_EXPERIENCE = '1'
+    # The framework-dependent mock host is an apphost and needs to find this portable runtime.
+    if (Test-Path (Join-Path $sdk 'dotnet.exe')) { $env:DOTNET_ROOT = $sdk }
     return (Get-Command dotnet -ErrorAction Stop).Source
 }
 
@@ -135,6 +137,14 @@ function Get-JarCookieCount {
     Writes one length-prefixed native message to a process' stdin and reads the length-prefixed reply.
     Kept in one place so Test-01 and Test-06 use exactly the same framing implementation.
 #>
+<#
+    Drives one request/response cycle with the native-messaging host.
+
+    Implemented with file redirection on purpose: streaming stdin/stdout through
+    System.Diagnostics.Process from Windows PowerShell 5.1 proved unreliable here (the host saw EOF
+    immediately), while `Start-Process -RedirectStandardInput` behaves exactly like a browser writing
+    one frame and closing the pipe.
+#>
 function Invoke-NativeMessage {
     param(
         [Parameter(Mandatory=$true)][string]$HostExe,
@@ -143,54 +153,56 @@ function Invoke-NativeMessage {
         [int]$TimeoutMs = 20000
     )
 
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = $HostExe
-    $psi.UseShellExecute = $false
-    $psi.RedirectStandardInput = $true
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError = $true
-    $psi.CreateNoWindow = $true
-    foreach ($key in $Environment.Keys) { $psi.EnvironmentVariables[$key] = [string]$Environment[$key] }
-
-    $proc = New-Object System.Diagnostics.Process
-    $proc.StartInfo = $psi
-    [void]$proc.Start()
+    $io = Join-Path $script:WorkRoot '_io'
+    New-Item -ItemType Directory -Path $io -Force | Out-Null
+    $stamp = [guid]::NewGuid().ToString('N')
+    $inFile = Join-Path $io "$stamp.in"
+    $outFile = Join-Path $io "$stamp.out"
+    $errFile = Join-Path $io "$stamp.err"
 
     $payload = [System.Text.Encoding]::UTF8.GetBytes($Json)
-    $stdin = $proc.StandardInput.BaseStream
-    $header = [BitConverter]::GetBytes([uint32]$payload.Length)
-    $stdin.Write($header, 0, 4)
-    $stdin.Write($payload, 0, $payload.Length)
-    $stdin.Flush()
+    $frame = New-Object byte[] (4 + $payload.Length)
+    [Array]::Copy([BitConverter]::GetBytes([uint32]$payload.Length), 0, $frame, 0, 4)
+    [Array]::Copy($payload, 0, $frame, 4, $payload.Length)
+    [System.IO.File]::WriteAllBytes($inFile, $frame)
 
-    $stdout = $proc.StandardOutput.BaseStream
-    $readHeader = New-Object byte[] 4
-    $read = 0
-    while ($read -lt 4) {
-        $n = $stdout.Read($readHeader, $read, 4 - $read)
-        if ($n -le 0) { break }
-        $read += $n
+    $saved = @{}
+    foreach ($key in $Environment.Keys) {
+        $saved[$key] = [Environment]::GetEnvironmentVariable($key, 'Process')
+        [Environment]::SetEnvironmentVariable($key, [string]$Environment[$key], 'Process')
     }
-    $reply = $null
-    if ($read -eq 4) {
-        $length = [BitConverter]::ToUInt32($readHeader, 0)
-        $buffer = New-Object byte[] $length
-        $got = 0
-        while ($got -lt $length) {
-            $n = $stdout.Read($buffer, $got, $length - $got)
-            if ($n -le 0) { break }
-            $got += $n
+
+    try {
+        $proc = Start-Process -FilePath $HostExe -RedirectStandardInput $inFile `
+                              -RedirectStandardOutput $outFile -RedirectStandardError $errFile `
+                              -NoNewWindow -PassThru
+        $null = $proc.WaitForExit($TimeoutMs)
+        if (-not $proc.HasExited) { Stop-ProcessTree -ProcessId $proc.Id }
+        Start-Sleep -Milliseconds 150
+        $exited = $proc.HasExited
+        $exitCode = $null
+        try { if ($exited) { $exitCode = $proc.ExitCode } } catch { }
+    } finally {
+        foreach ($key in $saved.Keys) {
+            [Environment]::SetEnvironmentVariable($key, $saved[$key], 'Process')
         }
-        if ($got -eq $length) { $reply = [System.Text.Encoding]::UTF8.GetString($buffer) }
     }
 
-    try { $proc.StandardInput.Close() } catch { }
-    if (-not $proc.WaitForExit($TimeoutMs)) { try { $proc.Kill() } catch { } }
-    $stderr = $proc.StandardError.ReadToEnd()
-    $exitCode = $proc.ExitCode
-    $proc.Dispose()
+    $reply = $null
+    if (Test-Path $outFile) {
+        $bytes = [System.IO.File]::ReadAllBytes($outFile)
+        if ($bytes.Length -ge 4) {
+            $length = [BitConverter]::ToUInt32($bytes, 0)
+            if ($bytes.Length -ge (4 + $length)) {
+                $reply = [System.Text.Encoding]::UTF8.GetString($bytes, 4, $length)
+            }
+        }
+    }
 
-    return [pscustomobject]@{ Reply = $reply; ExitCode = $exitCode; Stderr = $stderr }
+    $stderr = ''
+    if (Test-Path $errFile) { $stderr = [string](Get-Content -Raw $errFile) }
+
+    return [pscustomobject]@{ Reply = $reply; ExitCode = $exitCode; Exited = $exited; Stderr = $stderr }
 }
 
 function New-CookieUpdateJson {
@@ -215,21 +227,62 @@ function Start-BridgeProcess {
     param(
         [Parameter(Mandatory=$true)][string]$FilePath,
         [string[]]$Arguments = @(),
-        [hashtable]$Environment = @{}
+        [hashtable]$Environment = @{},
+        [string]$Tag = 'proc'
     )
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = $FilePath
-    $psi.UseShellExecute = $false
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError = $true
-    $psi.RedirectStandardInput = $false
-    $psi.CreateNoWindow = $true
-    foreach ($key in $Environment.Keys) { $psi.EnvironmentVariables[$key] = [string]$Environment[$key] }
-    foreach ($a in $Arguments) { [void]$psi.ArgumentList.Add($a) }
-    $proc = New-Object System.Diagnostics.Process
-    $proc.StartInfo = $psi
-    [void]$proc.Start()
+    $io = Join-Path $script:WorkRoot '_io'
+    New-Item -ItemType Directory -Path $io -Force | Out-Null
+    $stamp = [guid]::NewGuid().ToString('N')
+    $outFile = Join-Path $io "$Tag-$stamp.out"
+    $errFile = Join-Path $io "$Tag-$stamp.err"
+
+    $saved = @{}
+    foreach ($key in $Environment.Keys) {
+        $saved[$key] = [Environment]::GetEnvironmentVariable($key, 'Process')
+        [Environment]::SetEnvironmentVariable($key, [string]$Environment[$key], 'Process')
+    }
+
+    try {
+        $startArgs = @{
+            FilePath               = $FilePath
+            RedirectStandardOutput = $outFile
+            RedirectStandardError  = $errFile
+            NoNewWindow            = $true
+            PassThru               = $true
+        }
+        if ($Arguments.Count -gt 0) { $startArgs['ArgumentList'] = ($Arguments -join ' ') }
+        $proc = Start-Process @startArgs
+    } finally {
+        foreach ($key in $saved.Keys) {
+            [Environment]::SetEnvironmentVariable($key, $saved[$key], 'Process')
+        }
+    }
+
+    $proc | Add-Member -NotePropertyName StdOutFile -NotePropertyValue $outFile -Force
+    $proc | Add-Member -NotePropertyName StdErrFile -NotePropertyValue $errFile -Force
     return $proc
+}
+
+function Get-ProcessStdOut {
+    param([Parameter(Mandatory=$true)]$Process)
+    $file = $Process.StdOutFile
+    if ($file -and (Test-Path $file)) {
+        $text = Get-Content -Raw $file
+        if ($null -eq $text) { return '' }
+        return [string]$text
+    }
+    return ''
+}
+
+function Get-ProcessStdErr {
+    param([Parameter(Mandatory=$true)]$Process)
+    $file = $Process.StdErrFile
+    if ($file -and (Test-Path $file)) {
+        $text = Get-Content -Raw $file
+        if ($null -eq $text) { return '' }
+        return [string]$text
+    }
+    return ''
 }
 
 <# Drains stdout/stderr of a background process into a string builder without blocking. #>

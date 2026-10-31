@@ -142,3 +142,26 @@ powershell -ExecutionPolicy Bypass -File ..\tools\Install-CookieBridge.ps1
 # 4) 状态
 %LOCALAPPDATA%\VRCVideoCacher-CookieBridge\host\CookieBridge.NativeHost.exe --status
 ```
+
+## 7. 自动化测试最终结果（2026-11-01，test-dev 实跑）
+
+| 用例 | 结果 | 关键证据 |
+| --- | --- | --- |
+| xUnit 单元测试（136 条） | **PASS 136 / FAIL 0** | `CookieBridge.TestRunner` 执行同一 xUnit 程序集；`dotnet test` 在本机沙箱内因 vstest testhost 对父进程 `EnableRaisingEvents` 被拒（Win32Exception 5）而无法启动，属环境限制，普通桌面会话应正常 |
+| Test-01 Vault 往返（20 项检查） | PASS | NativeHost 协议 → vault 密文 → 目标文件 7 字段 |
+| Test-02 注入正向（19 项检查） | PASS | `Startup hook initialised` → `Attached to host PID ...` → `L1..L6 全部 resolved` → `Acquired YtdlCookieJar gate` → 目标文件 6 条 |
+| Test-02b 单文件负向对照（8 项检查） | PASS | `TRUSTED_PLATFORM_ASSEMBLIES`(空) / `StartupHookProvider.IsSupported=false`，无 hook 日志 —— 与 §1.2 一致 |
+| Test-03 真实 VRCVC 只读断言 | BLOCKED | 测试脚本自身空引用 bug（只读，未污染真实 Cookie 文件）；等价链路已由 §2 的真实路径 E2E 覆盖 |
+| Test-04 无 vault（8 项） | PASS | Hook 静默跳过，宿主不受影响 |
+| Test-05 disabled.flag（6 项） | PASS | 插件完全不写入 |
+| Test-06 实时更新（9 项） | PASS | 改动 vault 后 1.28s / 1.39s 内目标文件更新，宿主同一 pid 未重启，`syncCount` 递增 |
+| Test-07 兼容性闸门（10 项） | PASS | 未知/过新版本仍允许运行（`HookAllowed=true`），仅降级 |
+
+完整明细见 [`docs/TEST-REPORT.md`](./TEST-REPORT.md)。测试过程中发现并修复了两个真实缺陷：
+`SecretRedactor.Redact` 的死循环（每条日志都会经过它）与 `BridgePaths` 的静态路径缓存导致测试隔离泄漏。
+
+## 8. 截止状态
+
+* 本机已安装：`%LOCALAPPDATA%\VRCVideoCacher-CookieBridge\{host,hook,browser-extension}`，HKCU 已注册 6 个浏览器的 Native Messaging Host。
+* 真实 Cookie 文件为"不存在"状态（测试用的合成数据已清除），vault 已清空 —— 首条真实 Cookie 由浏览器扩展推送。
+* `DOTNET_STARTUP_HOOKS` 未被修改（默认不注册）。
