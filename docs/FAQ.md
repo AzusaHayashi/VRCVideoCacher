@@ -383,3 +383,63 @@ powershell -ExecutionPolicy Bypass -File tools\Test-NativeMessaging.ps1
 
 其它常见原因：注册表键指向的 manifest 路径不存在、`allowed_origins` 与已加载扩展 ID 不一致
 （本文档 §扩展 ID）、扩展没有 `nativeMessaging` 权限。
+
+---
+
+## 面板上 `PO Token Provider` 显示 `Not working` / `Server Status` 不是 Running
+
+**实测根因（2026-11-01，VRCVC 2026.10.29）**：`hosts` 里 `127.0.0.1 localhost.youtube.com` 这一行是**被注释掉的**，
+但 `Config.json` 里 `YtdlpWebServerUrl` 仍是 `http://localhost.youtube.com:9696`。该名字会被系统 DNS 解析到
+非本机地址（本机实测返回 `198.18.1.101`，代理软件的 fake-ip 段），于是 `HttpListener` 绑定失败：
+
+```
+[WRN] System.Net.Sockets.SocketException (10049): 在其上下文中，该请求的地址无效。
+[ERR] Unobserved task exception ... at EmbedIO.Net.HttpListener.Start()
+WebServer State: Stopped
+```
+
+Web 服务器整体没起来，面板就会出现"服务器未运行 / PO Token 不工作"这类红点。
+
+**修复**（需要管理员，因为要改 hosts）：
+
+```powershell
+# 会先备份 hosts 到 hosts.cookiebridge-backup-<时间戳>，再清掉重复的注释行并写入一条生效条目
+Start-Process powershell -Verb RunAs -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File',
+  '<仓库>	ools\Fix-VrcvcHostsEntry.ps1'
+```
+
+等价的手动写法：编辑 `C:\Windows\System32\drivers\etc\hosts`，去掉
+`127.0.0.1 localhost.youtube.com` 前面的 `#`（保留**一条**即可），保存后重启 VRCVideoCacher。
+
+验证：
+
+```powershell
+Resolve-DnsName localhost.youtube.com -Type A     # 必须解析到 127.0.0.1
+```
+
+重启后面板应显示 `Server Status: Running`、`PO Token Provider: bgutil-ytdlp-pot-provider <版本> *:<端口>`。
+
+## 每次启动都在"安装" Deno / yt-dlp
+
+不一定是重装。VRCVC 每次启动都会做一次**联网版本检查**（含 GitHub API），只有版本不一致才会下载整包。
+判断方法看日志：
+
+```
+Deno Current: v2.9.8 Latest: v2.9.8
+Deno is up to date.                       <- 这一行说明没有重装
+YT-DLP Current: sabr 2026.10.27.135913 Latest: sabr 2026.10.27.135913
+YT-DLP is up to date.
+```
+
+真正会触发下载的情况：
+* 工具确实旧了（本机实测 13:05 从 Deno 2.9.7 → 2.9.8、yt-dlp sabr 08.19 → 10.27，各下载一次）；
+* 版本检查失败（`Failed to check for YT-DLP updates.`）——网络/GitHub 被代理或墙挡住时，
+  每次启动都会重试并可能重新下载；
+* 工具文件被安全软件隔离/替换，`--version` 探测失败。
+
+如果希望**完全不联网检查**，可在 `%APPDATA%\VRCVideoCacher\Config.json` 里设 `"YtdlpAutoUpdate": false`
+（代价：之后不会自动获得 yt-dlp/Deno 更新，YouTube 改协议时需要手动恢复）。
+
+上游不存在"优先使用系统已安装的 yt-dlp/deno"的开关；唯一相关的是启动参数 `--global-path`，
+它要求 PATH 里有 `yt-dlp.exe`/`deno.exe`/`ffmpeg.exe`。Steam 版由 `manifest.vrmanifest` 固定启动参数，
+改它会被 Steam 覆盖，因此不推荐。
