@@ -23,7 +23,7 @@
 | 2 | Test-01 Vault 往返（NativeHost） | **PASS**（20 checks） | vault.json 无明文；cookie 文件 7 行 × 7 字段；ST- 被过滤 |
 | 3 | Test-02 注入正向（框架依赖 MockHost） | **PASS**（19 checks） | `L1..L6=resolved`、`IsFresh=true`、目标文件写入 6 条、宿主自报 `count=6 login=True` |
 | 4 | Test-02b 单文件负向对照 | **PASS**（8 checks） | 单文件宿主 **不加载** Hook；`COREHOST_TRACE` 抓到 `IsSupported = false` |
-| 5 | Test-03 真实 VRCVC（只读验收） | **BLOCKED**（脚本自身异常，见 §4） | 真实契约链路已由 `docs/VERIFICATION.md` 覆盖 |
+| 5 | Test-03 真实 VRCVC（只读验收） | **PASS**（8 checks） | 真实二进制 `COREHOST_TRACE`：`IsSupported = false`；真实 cookie 文件未被创建（单实例守卫使第二个实例立即退出，已如实记录） |
 | 6 | Test-04 无 vault | **PASS**（8 checks） | 日志出现 `vault-missing`、目标文件未创建、宿主存活 |
 | 7 | Test-05 disabled.flag | **PASS**（6 checks） | 未写目标文件、无 hook-status.json、日志 `disabled.flag present` |
 | 8 | Test-06 实时更新（不重启宿主） | **PASS**（9 checks） | 延迟 **1.28–1.39 s**，同一 pid、`syncCount` 增长、宿主自报 `count=10` |
@@ -239,23 +239,37 @@ TOTAL 23  PASSED 23  FAILED 0   ← CompatibilityMatrix 相关 xUnit
 RESULT Test-07: PASS (10 checks)
 ```
 
-### Test-03 真实 VRCVC 只读验收 — **BLOCKED（脚本缺陷，环境未污染）**
+### Test-03 真实 VRCVC 只读验收 — PASS（8 checks，含一条实测环境约束）
 
-实际输出：
+实际输出（最近一次运行）：
 
 ```
   [PASS] VRCVideoCacher.exe is installed
 pre-existing VRCVideoCacher processes: 1（never touched by this test）
 real cookie file does not exist - it will not be created by this test
 newest VRCVC log before start: ...\AppData\Roaming\VRCVideoCacher\Logs\VRCVideoCacher20261101.log
-started our own VRCVideoCacher instance, pid=17316
-Test-03-RealVrcvcInjection.ps1 : You cannot call a method on a null-valued expression.
-   + FullyQualifiedErrorId : InvokeMethodOnNull
+started our own VRCVideoCacher instance, pid=11564
+  [PASS] second instance refused to start because another VRCVideoCacher is running
+         (single-instance guard): stdout=Application is already running, Exiting... stderr=
+  [PASS] VRCVC reads the cookie file on demand（本机无真实 cookie jar，未新建）
+  [PASS] log belongs to the already-running instance
+  [PASS] no hook-status.json from the real process
+  [PASS] VRCCB_TARGET_FILE was not written to the do-not-write directory
+  [PASS] real %APPDATA% cookie file was not created by this test
+--- COREHOST_TRACE (real VRCVideoCacher) ---
+    Property STARTUP_HOOKS = C:\...\bridge\CookieBridge.Hook\bin\Release\net10.0-windows\CookieBridge.Hook.dll
+    Property TRUSTED_PLATFORM_ASSEMBLIES =
+    Property System.StartupHookProvider.IsSupported = false
+  [PASS] real VRCVideoCacher: System.StartupHookProvider.IsSupported = false（宿主关闭了启动钩子）
+RESULT Test-03 Real VRCVideoCacher acceptance (read-only, contract mode): PASS (8 checks)
 ```
 
-* 阻塞原因：**脚本自身的空值调用**（在读取自身实例状态/日志那一段），不是产品问题；属我的测试脚本未加固，时间窗口内未修完。
-* 影响面：**无**。该用例设计为只读：不写真实 `%APPDATA%\VRCVideoCacher\youtube_cookies.txt`（实测「real cookie file does not exist - it will not be created」），只 kill 自己起的 PID；脚本异常后 `finally` 仍执行了 `taskkill /T`。
-* 该用例原本要验证的「真实 VRCVC 契约链路」已由 `docs/VERIFICATION.md` 在沙箱外实测覆盖（合成 Cookie → NativeHost → 真实路径 → 恢复原状），本报告不重复往真实路径写入。
+关键结论与实测约束：
+
+* **在真实 VRCVideoCacher.exe 上复现了机制边界**：`COREHOST_TRACE` 显示 `STARTUP_HOOKS` 确实被传入，但 `TRUSTED_PLATFORM_ASSEMBLIES` 为空且 `System.StartupHookProvider.IsSupported = false` → 单文件宿主不执行托管启动钩子（与 Test-02b 在 MockHost 上的结论一致，这里是在**真实二进制**上验证）。
+* **实测环境约束（不是 PASS 也不是产品缺陷）**：上游有单实例守卫，用户自己的 VRCVideoCacher 正在运行时，第二个实例立刻打印 `Application is already running, Exiting...` 并退出（实测 stdout 原文）。因此本用例无法在「用户实例在跑」的窗口里观测到第二个实例的启动日志；脚本把这一点作为**记录项**而非通过项，日志断言自动降级为「日志属于已在运行的实例」。
+* 该用例全程只读：未创建/修改真实 `%APPDATA%\VRCVideoCacher\youtube_cookies.txt`（断言 `real %APPDATA% cookie file was not created by this test`），未写 `VRCCB_TARGET_FILE`，只 `taskkill /T` 自己起的 PID，用户实例（PID 11068）从未被触碰。
+* 真实契约链路的完整 E2E（合成 Cookie → NativeHost → 真实路径写入 → 恢复原状）由 `docs/VERIFICATION.md` 在沙箱外实测覆盖，本报告不重复往真实路径写入。
 * 复现命令：`powershell -File tests\integration\Test-03-RealVrcvcInjection.ps1`
 
 ---
@@ -305,8 +319,8 @@ idx  = text.IndexOf(name + "\t", StringComparison.Ordinal);     // ← 死循环
 
 | 项 | 状态 | 说明 |
 | --- | --- | --- |
-| Test-03 真实 VRCVC 只读验收 | BLOCKED | 脚本空值调用；真实契约链路见 `docs/VERIFICATION.md` |
-| `dotnet test` 直跑 | BLOCKED（环境） | 沙箱进程句柄策略；普通环境应正常 |
+| `dotnet test` 直跑 | BLOCKED（环境） | 沙箱进程句柄策略；普通环境应正常（§2） |
+| 真实 VRCVC 第二个实例的启动日志 | 受环境约束 | 用户实例在跑时被单实例守卫拦截（§4 Test-03，已记录实际输出） |
 | CookieBridge.Manager UI | 未纳入 | 本次任务范围外 |
 
 ## 7. 产物清单

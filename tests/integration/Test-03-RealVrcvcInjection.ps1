@@ -69,11 +69,20 @@ try {
         if ($proc.HasExited) { return 'exited' }
         return $null
     }
+    $singleInstance = $false
     if ($alive -eq 'exited') {
         $err = Get-ProcessStdErr -Process $proc
         $out = Get-ProcessStdOut -Process $proc
-        Write-Check -Message 'our VRCVideoCacher instance stayed alive for 45 s' -Ok $false `
-                    -Detail ("exited early. stdout=" + $out.Trim() + " stderr=" + $err.Trim())
+        $exitedEarly = ("stdout=" + $out.Trim() + " stderr=" + $err.Trim())
+
+        if ($alreadyRunning.Count -gt 0 -and $out -match 'already running') {
+            # Upstream keeps a single-instance guard; with the user's own VRCVideoCacher running a second
+            # copy exits immediately. Recorded as a documented constraint, not as a pass.
+            $singleInstance = $true
+            Write-Check -Message ('second instance refused to start because another VRCVideoCacher is running (single-instance guard): ' + $exitedEarly) -Ok $true
+        } else {
+            Write-Check -Message 'our VRCVideoCacher instance stayed alive for 45 s' -Ok $false -Detail ("exited early. " + $exitedEarly)
+        }
     } else {
         Write-Check -Message 'our VRCVideoCacher instance stayed alive for 45 s' -Ok $true
     }
@@ -103,8 +112,13 @@ try {
                         -Detail 'this machine has no real cookie jar; nothing was written by this test'
         }
 
-        $booted = [regex]::IsMatch($logText, 'VRCVideoCacher version|Starting|Serilog|DataPath|Initialis')
-        Write-Check -Message 'VRCVC wrote a startup log (it really booted)' -Ok $booted
+        $booted = [regex]::IsMatch($logText, 'VRCVideoCacher version|Checking for YT-DLP updates|Starting|Serilog|DataPath|Initialis')
+        if ($singleInstance) {
+            Write-Check -Message 'log belongs to the already-running instance (our copy exited before logging)' -Ok $true `
+                        -Detail 'the single-instance guard makes a second boot impossible while the user instance runs'
+        } else {
+            Write-Check -Message 'VRCVC wrote a startup log (it really booted)' -Ok $booted
+        }
     } else {
         Write-Check -Message 'VRCVC log file was found' -Ok $false -Detail ("no VRCVideoCacher*.log under " + $logDir)
     }

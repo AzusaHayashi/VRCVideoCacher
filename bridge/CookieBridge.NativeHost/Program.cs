@@ -6,9 +6,16 @@ namespace CookieBridge.NativeHost;
 /// <summary>
 /// Two modes in one binary:
 ///
-///  * default (no arguments) — native-messaging host spawned by Chrome/Firefox. Contract: 4-byte
-///    little-endian length + UTF-8 JSON on stdin, same framing back on stdout. Nothing else may be
-///    written to stdout (a stray WriteLine corrupts the channel), so diagnostics go to the bridge log.
+///  * native messaging (default) — spawned by Chrome/Firefox. Contract: 4-byte little-endian length +
+///    UTF-8 JSON on stdin, same framing back on stdout. Nothing else may be written to stdout (a stray
+///    WriteLine corrupts the channel), so diagnostics go to the bridge log.
+///
+///    IMPORTANT: the browser passes its own arguments too. Chrome on Windows adds
+///    <c>--parent-window=&lt;handle&gt;</c>, and newer versions pass the caller origin as well. The entry
+///    point therefore has to look for a *known command* rather than assume "any argument means CLI".
+///    Treating browser arguments as a CLI invocation made the host print usage to stderr and exit
+///    immediately, which the extension reported as
+///    "Error when communicating with the native messaging host".
 ///
 ///  * CLI (--register-host / --unregister-host / --status / --send ...) — used by the installer, the
 ///    manager and the automated tests. Same code paths as the browser, no extra tooling.
@@ -18,11 +25,22 @@ internal static class Program
     private const string ChromeExtensionId = "fdjmcdfolkgicljalacnlemepfhmnmfp";
     private const string FirefoxExtensionId = "vrexcookiebridge@local";
 
+    private static readonly string[] CliCommands =
+    [
+        "--register-host", "--install",
+        "--unregister-host", "--uninstall",
+        "--status", "--send", "--version",
+    ];
+
     private static int Main(string[] args)
     {
         try
         {
-            return args.Length == 0 ? RunNativeMessaging() : RunCli(args);
+            var command = args.FirstOrDefault(arg =>
+                CliCommands.Contains(arg, StringComparer.OrdinalIgnoreCase));
+
+            // No known command => the browser started us; ignore whatever arguments it added.
+            return command == null ? RunNativeMessaging() : RunCli(command, args);
         }
         catch (Exception ex)
         {
@@ -60,9 +78,9 @@ internal static class Program
         return 0;
     }
 
-    private static int RunCli(string[] args)
+    private static int RunCli(string command, string[] args)
     {
-        switch (args[0].ToLowerInvariant())
+        switch (command.ToLowerInvariant())
         {
             case "--register-host":
             case "--install":
@@ -132,11 +150,13 @@ internal static class Program
 
     /// <summary>
     /// Sends a cookie.update through the exact same handler the browser exercises.
-    /// <paramref name="args"/>[1] = path to a Netscape cookie file, or "-" to read stdin (UTF-8).
+    /// The argument after <c>--send</c> is a Netscape cookie file, or <c>-</c> to read stdin (UTF-8).
     /// </summary>
     private static int Send(string[] args)
     {
-        var path = args.Length > 1 ? args[1] : "-";
+        var commandIndex = Array.FindIndex(args, a => a.Equals("--send", StringComparison.OrdinalIgnoreCase));
+        var path = commandIndex >= 0 && commandIndex + 1 < args.Length ? args[commandIndex + 1] : "-";
+        if (path.StartsWith("--", StringComparison.Ordinal)) path = "-";
         var cookies = path == "-" ? Console.In.ReadToEnd() : File.ReadAllText(path);
 
         var request = new CookieUpdateRequest

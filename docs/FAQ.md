@@ -348,3 +348,38 @@ Get-ChildItem "$env:APPDATA\VRCVideoCacher\Logs\VRCVideoCacher*.log" |
 
 **Q：会改 VRCVideoCacher 的安装目录吗？**
 不会。Steam 更新能覆盖的目录里我们一个字节都不写。
+
+---
+
+## 扩展徽章变红 / 提示 `Error when communicating with the native messaging host`
+
+**已修复的已知原因（v1.0.1）**：Chrome 在 Windows 上拉起 Native Host 时会额外传
+`--parent-window=<句柄>`（新版还会传调用方 origin）。旧版 host 把"任何参数"都当成 CLI 命令，
+于是打印用法到 stderr 后立刻退出 —— 浏览器侧看到的正是
+`Error when communicating with the native messaging host.`，而桥接日志里**一条 host 启动记录都没有**。
+
+判断方法（看日志里有没有这一行）：
+
+```powershell
+Get-Content "$env:LOCALAPPDATA\VRCVideoCacher-CookieBridge\logsridge.log" -Tail 20
+```
+
+* 有 `native messaging host started.` → host 被拉起了，问题在处理阶段（看后续行）。
+* 没有 → host 根本没跑起来：参数解析 bug（本页第一种）、manifest/注册表问题、或 exe 被杀软拦截。
+
+修复与验证：
+
+```powershell
+# 重新发布并部署（会用新 exe 覆盖 %LOCALAPPDATA%\VRCVideoCacher-CookieBridge\host）
+powershell -ExecutionPolicy Bypass -File tools\Build-Dist.ps1
+powershell -ExecutionPolicy Bypass -File tools\Install-CookieBridge.ps1 -Source .\dist
+
+# 按浏览器的调用方式回归测试（会带 --parent-window=65552）
+powershell -ExecutionPolicy Bypass -File tools\Test-NativeMessaging.ps1
+```
+
+回归脚本 12 项全 PASS 即说明"浏览器怎么调都能工作"。之后在扩展选项页点一次 **立即同步**
+（或刷新一次 YouTube 页面）即可。
+
+其它常见原因：注册表键指向的 manifest 路径不存在、`allowed_origins` 与已加载扩展 ID 不一致
+（本文档 §扩展 ID）、扩展没有 `nativeMessaging` 权限。
