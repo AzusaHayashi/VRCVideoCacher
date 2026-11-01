@@ -169,8 +169,11 @@ public static class NativeMessageHandler
 
         if (running)
         {
-            BridgeLog.Warn("host",
-                "VRCVideoCacher is running without the CookieBridge hook; wrote the jar without an in-process gate.");
+            // Not an error: the Steam build is a single-file publish that cannot load the in-process
+            // plugin, so this is the normal contract-mode path. The write above already waited for any
+            // running yt-dlp to finish, which is what the in-process gate would otherwise provide.
+            BridgeLog.Info("host",
+                "VRCVideoCacher is running; jar written in contract mode (yt-dlp was idle).");
         }
 
         return response;
